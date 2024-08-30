@@ -280,6 +280,74 @@ ggplot(redds_sf_i, aes(lag2_rim_af, detrend_redds))+geom_point()+geom_smooth(met
 ```
 No relationship.
 
+# Compete against environmental variables
+
+There should be strong correlation between environmental conditions and the need for deep drawdowns. Therefore, the relationship between drawdown depth and redd counts the following year could be mediated by a common factor, and not be causal. One way to evaluate this question would be to build a model that includes environmental variables as potential explanatory factors, then examine the degree the effects of these variables on redd counts can be parsed from those of drawdown depth using the variance inflation factor. 
+
+For now, let's use snowpack at a nearby SNOTEL site (White Pass) on Apr 1 of the year BEFORE redd counts. The rationale for using the lagged effect is that we are curious about other factors that might explain why lagged drawdown depth correlates with redd counts, and not that there is a correlation with water availability in the stream in the year of the redd counts.
+
+
+```{r, eval = FALSE}
+#data prep
+sp <- read_csv("data/snowpack.csv")
+sp <- sp[-1,c(1, 13)]
+
+#note water year is designated as the calendar year that it ends, so the data for Apr corresponds to the calendar year
+
+sp %<>%
+  rename(SWE_Apr = "Apr...13", year = "Water Year") %>%
+  mutate(year_lag = year + 1)
+
+redds_sf_i %<>% 
+  left_join(select(sp, year_lag, SWE_Apr), by = c("year" = "year_lag"), keep = F)
+
+redds_sf_i %<>%
+  mutate(SWE_Apr = as.numeric(SWE_Apr))
+
+```
+
+```{r, message=FALSE, warning = FALSE, eval = FALSE}
+#build model
+a <- glm(detrend_redds~ lag1_rim_af + SWE_Apr, data = redds_sf_i)
+b <- glm(detrend_redds~  SWE_Apr, data = redds_sf_i)
+c <- glm(detrend_redds~ lag1_rim_af, data = redds_sf_i)
+d <- glm(detrend_redds~ 1, data = redds_sf_i)
+
+# backwards stepwise model selection
+drop1(a, test = "Chisq")
+
+#lrt
+anova(a, test = "Chisq")
+
+#vif
+car::vif(a)
+
+#correlation
+cor(select(redds_sf_i, detrend_redds, lag1_rim_af, SWE_Apr))
+
+#model validation
+DHARMa::simulateResiduals(a, plot = TRUE)
+```
+
+ Minimum pool and SWE are strongly correlated (r = 0.48). However, when both are used in a gaussian glm to model detrended redd counts from 1994 - 2023, the VIF is surprisingly low at 1.31. Model validation looks good. Backward stepwise selection using likelihood ratio tests, and a cutoff of p = 0.05 suggests that pool elevation (p = 0.02458), and not snowpack (p = 0.527), is a good predictor of redds the following year.
+
+To be conservative, let's leave SWE in the model, and then plot model predictions
+
+
+```{r, eval = FALSE}
+#plot prediction from model
+require(effects)
+eff1 <- predictorEffect("lag1_rim_af", a)
+effdf <- as.data.frame(eff1)
+
+ggplot(data = effdf, aes(x = (lag1_rim_af), y = fit))+ 
+  geom_line()+
+  geom_smooth( aes(ymin = lower, ymax = upper), stat = "identity") +
+  theme_bw()+
+  xlab("Low Pool Previous Year")+ylab("Change in Redd Counts from Linear Trend") 
+```
+
+Here's the model prediction, around 50 redds lost (in addition to the trend towards decline). The gray is 95% CI for predicted effect. Doesn't appraoch zero until the lowest pool observations.
 
 
 # Summary / Conclusions
@@ -292,5 +360,66 @@ ggplot(redds_sf_i, aes(lag1_rim_af, detrend_redds))+geom_point()+geom_smooth(met
 
 If we use this trendline to make some generalizations, since 1994 drawdowns below the 2001 SOAC reccomendation to maintain Rimrock pool above 30k acre-feet are associated with a decline the following year of ~50 redds in SF Tieton and Indian Creek. This decline may be due to entrainment, impacts to prey base, changes in connectivity, or some combination of these factors. Alternatively this relationship may be driven by a correlation between environmental factors that reduce redd counts and the need for deeper drawdowns.
 
+# next steps
+
+- develop a new clean response variable (detrend using linear trend with year, not "detrend" function)
+- choose an environmental variable that captures
+  - PCA with snowpack on Apr 1, mean annual max temp, etc
+  - look into the literature for "best"
+- 
+```{r}
+sp <- read_csv("data/snowpack.csv")
+sp <- sp[-1,c(1, 13)]
+
+#note water year is designated as the calendar year that it ends, so the data for Apr corresponds to the calendar year
+
+sp %<>%
+  rename(SWE_Apr = "Apr...13", year = "Water Year") %>%
+  mutate(year_lag = year + 1)
+
+redds_sf_i %<>% 
+  left_join(select(sp, year_lag, SWE_Apr), by = c("year" = "year_lag"), keep = F)
+
+redds_sf_i %<>%
+  mutate(SWE_Apr = as.numeric(SWE_Apr))
+
+a <- glm(detrend_redds~ lag1_rim_af + SWE_Apr, data = redds_sf_i)
+b <- glm(detrend_redds~  SWE_Apr, data = redds_sf_i)
+c <- glm(detrend_redds~ lag1_rim_af, data = redds_sf_i)
+d <- glm(detrend_redds~ 1, data = redds_sf_i)
+
+drop1(a, test = "Chisq")
+
+anova(a, test = "Chisq")
+
+car::vif(a)
+
+cor(select(redds_sf_i, detrend_redds, lag1_rim_af, SWE_Apr))
+
+DHARMa::simulateResiduals(a, plot = TRUE)
 
 
+
+
+```
+```{r}
+require(effects)
+eff1 <- predictorEffect("lag1_rim_af", a)
+effdf <- as.data.frame(eff1)
+
+ggplot(data = effdf, aes(x = (lag1_rim_af), y = fit))+ 
+  geom_line()+
+  geom_smooth( aes(ymin = lower, ymax = upper), stat = "identity") +
+  theme_bw()+
+  xlab("Low Pool Previous Year")+ylab("Change in Redd Counts from Linear Trend") 
+```
+
+
+
+Still thinking about if this is an okay approach, but I pulled the Apr snow water equivalent (SWE) at the White Pass SNOTEL site into my R notebook. Minimum pool and SWE are strongly correlated (r = 0.48). When I use them both in a gaussian glm to model detrended redd counts from 1994 - 2023, the VIF is surprisingly low at 1.31. Model validation looks good. Backward stepwise selection using likelihood ratio tests, and a cutoff of p = 0.05 suggests that pool elevation (p = 0.02458), and not snowpack (p = 0.527), is a good predictor of redds the following year.
+
+Here's the model prediction. The gray is 95% CI for predicted effect.
+
+I don't know why pool elevation would show this relationship, but days at low pool would not. If I have time to QC it next week I will.
+
+I fit a gaussian GLM on detrended redd counts from 1994 - 2023, using two expl variables (depth of low pool from the year before and April snow water equivalent at the White Pass SNOTEL site). 
