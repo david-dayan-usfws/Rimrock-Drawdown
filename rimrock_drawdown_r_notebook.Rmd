@@ -15,6 +15,8 @@ output:
 
 This is an R Notebook. If you'd like to pre-rendered figures, read a summary of analysis and view code, please open the html file in a browser. If you'd like to run the code yourself download and open the rmd file in rstudio or any other integrated development environment that supports r and markdown. 
 
+This notebook collects any computational work associated with understanding effects to bull trout from drawdowns of the Rimrock Resevoir.
+
 
 ```{r, message = FALSE, warning = FALSE}
 require(cowplot)
@@ -27,9 +29,7 @@ require(lubridate)
 require(magrittr)
 require(pracma)
 ```
-# Rationale
 
-This notebook collects any computational work associated with understanding effects to bull trout from drawdowns of the Rimrock Resevoir. It supports s7 consultations, recovery projects and general questions about ecology, climate and water management.
 
 # Redd Counts
 
@@ -40,8 +40,8 @@ This section contains summaries and visualization of redd count data for the Rim
 Data are from:
 Divens (2024) Yakima Basin Bull Trout Spawning Surveys 2023. WDFW.
 
-## Data Import and QC
-### Import
+### Data Import and QC
+#### Import
 ```{r, warning=FALSE, message=FALSE}
 # Data Input
 
@@ -68,7 +68,7 @@ redds_up %<>%
 
 ```
 
-### Filtering
+#### Filtering
 
 __When to start time series?__  
 
@@ -79,6 +79,7 @@ For Rimrock populations the first reliable redd count data begins in
   _Indian Creek:_ 1988  
   _North Fork Tieton:_ 2007   
   
+
 
 __Low Counts__  
 
@@ -115,7 +116,7 @@ NF Tieton: 1994 - 2006, 2010, 2013, 2014, 2018
 
 We will also exclude NF Tieton from further analysis. Using SF Tieton and Indian together provides 27 data points (30 years - 3 bad data years). Including NF Tieton would reduce the data to just 13 points.
 
-# Redd Count Summary
+### Redd Count Summary
 
 Now Let's plot the __filtered__ redd count data for each population.
 
@@ -149,7 +150,7 @@ ggplot(data = redds_sf_i, aes(x = year, y = redds_total))+
   scale_x_continuous(breaks = seq(1993, 2023, 4), minor_breaks = seq(1993, 2023, 2))
 ```
 
-Strogn linear trend towards decline is evident in the toime series of redd counts. We will need to detrend the data to identify impacts of opeations or environmental variables.
+Linear trend towards decline is evident in the time series of redd counts. We will need to detrend the data to identify impacts of operations or environmental variables.
 
 # Rimrock Operations
 
@@ -214,17 +215,20 @@ Colored lines are individual years from 1981- 2023, with more recent years in li
 
 # Correlation of Pool Height and Redd Counts
 
-Finally, we examine the relationship between Rimrock pool height and redd counts. 
+Next we examine the relationship between Rimrock pool height and redd counts. 
 
-Some notes on analysis:  
+__Some notes on variables:__  
 (1) Data: Since we are interested in Rimrock-wide effects, we will use the combined, filtered redd count data for Indian Creek and South Fork Tieton River. Years with known data quality issues are excluded (see filtering section above for details), and NF Tieton is excluded because the data set only begins in 2006.   
-(2) Lags: Drawdown overlaps occurs during spawning season and outmigration. Drawdown is expected to have little impact on redd counts during that year. Instead the potential immpacts of drawdowns are expected to be delayed for one or several years, depending on the mechanism of effect. For example, effects to prey base may only be realized in redd count data following 2 or 3 years.  
-(3) Explanatory Variable: Following the approach of Mongillo et al 1980, we will use the minimum pool reached in a year as the explanatory variable.
+(2) Lags: Drawdown overlaps occurs during spawning season and outmigration. Drawdown is expected to have little impact on redd counts during that year. Instead the potential impacts of drawdowns are expected to be delayed for one or several years, depending on the mechanism of effect. For example, effects to prey base may only be realized in redd count data following 2 or 3 years. We will examine impacts 1, 2 and 3 years after drawdown.  
+(3) Explanatory Variable: Following the approach of Mongillo et al 1980, we will use the minimum pool reached in a year as the explanatory variable for drawdown depth. This not only has the benefit of precendent, it also makes sense from a mechanistic basis. Entrainment is determined by forebay habitat usage and intake velocity. Intake velocity does not vary much across years, but forebay habtiat usage does because of the bathymetry of Rimrock Lake. The forebay is very deep relative to the rest of the reservoir, concentrating individuals near the intake during deeper drawdowns. 
 (4) Trends: There is a strong declining trend in the available data. This may reduce power to identify relationships between depth of drawdown and redd counts in following years. We will also consider detrended data.
+
+__Some notes on statistical approach:__
+Ultimately we are unsure of the relationship between several explanatory variables and detrended redd counts, at this point and this is best approached as a model building exercise. We will build a saturated model, validate it, then conduct model selection, and hypothesis testing for the final predictors.
 
 ## Data Prep
 
-```{r}
+```{r, message = FALSE, warning = FALSE}
 # create min_pool
 rimrock %>%
   group_by(year) %>%
@@ -236,7 +240,9 @@ redds_sf_i %<>%
   mutate(lag1_year = year -1) %>%
   left_join(select(min_pool_year, year, lag1_rim_af=rim_af), by = c("lag1_year"= "year")) %>%
   mutate(lag2_year = year -2) %>%
-  left_join(select(min_pool_year, year, lag2_rim_af=rim_af), by = c("lag2_year"= "year")) 
+  left_join(select(min_pool_year, year, lag2_rim_af=rim_af), by = c("lag2_year"= "year")) %>%
+  mutate(lag3_year = year -3) %>% 
+  left_join(select(min_pool_year, year, lag3_rim_af=rim_af), by = c("lag3_year"= "year")) 
 
 # add detrended redd counts
 
@@ -256,7 +262,53 @@ redds_sf_i %<>%
 #   geom_hline(aes(yintercept = 0))
 ```
 
-## Year 1 Lag
+## Model Selection
+
+Here we will used backwards stepwise model selection based on the likelihood ratio test to determine which, if any, of the variables is a good predictor of redd count residuals.
+
+Let's start with the global (saturated) model that includes rimrock pool elvation one, two and three years prior. Then we will do some model validation.
+
+```{r}
+saturated_model <- lm(resid~lag1_rim_af + lag2_rim_af +lag3_rim_af, data = redds_sf_i)
+#plot(saturated_model)
+DHARMa::simulateResiduals(saturated_model, plot = TRUE)
+```
+Model validation looks great using both Pearson and simulated residuals, normal residuals, no outliers with high leverage, independence of residuals and predictors. Let's move on to model selection
+
+```{r}
+drop1(saturated_model, test = "Chisq")
+```
+2 year lag is not a good predictor according to LRT (p = 0.73). Remove and refit.
+
+```{r}
+m2 <- lm(resid~lag1_rim_af  +lag3_rim_af, data = redds_sf_i)
+drop1(m2, test = "Chisq")
+```
+3 year lag is not a good predictor according to LRT (p = 0.39). Remove and refit.
+
+```{r}
+m3 <- lm(resid~lag1_rim_af , data = redds_sf_i)
+drop1(m3, test = "Chisq")
+```
+
+
+Great, our final model includes only the previous year's pool volume. Let's conduct a simple T-test and plot the relationship
+
+## Final Model
+
+```{r, message=FALSE, warning = FALSE}
+
+summary(m3)
+
+ggplot(redds_sf_i, aes(lag1_rim_af, resid))+geom_point()+geom_smooth(method ="lm")+theme_bw()+xlab("Rimrock Low Pool (acre-feet)")+ylab("Detrended Indian Creek + SF Tieton Redds \n 1 year lag")
+```
+Our final model includes only minimum pool elevation the previous year. The slope is significantly different thatn zero (t-test p value = 0.0299).
+
+## Simple Approach
+
+Some folks may prefer a simple approach with model selection, simply test for each relationship. This is not preferred because of multiple comparisons, but let's have these ready to go.
+
+### Year 1 Lag
 First let's look at the impact of drawdown in the year immediately following it.
 
 First we will use the raw data:
@@ -268,16 +320,18 @@ summary(lm(redds_total~lag1_rim_af, data = redds_sf_i))
 
 Then we will use the detrended data
 
+
 ```{r, message = FALSE, warning=FALSE}
 ggplot(redds_sf_i, aes(lag1_rim_af, resid))+geom_point()+geom_smooth(method ="lm")+theme_bw()+xlab("Rimrock Low Pool (acre-feet)")+ylab("Detrended Indian Creek + SF Tieton Redds \n 1 year lag")
 summary(lm(resid~lag1_rim_af, data = redds_sf_i))
 
 ```
 
-## Year 2 Lag
+### Year 2 Lag
 Now let's look at the impact of drawdown 2 years after
 
 First we will use the raw data:
+
 ```{r, message = FALSE, warning=FALSE}
 ggplot(redds_sf_i, aes(lag2_rim_af, redds_total))+geom_point()+geom_smooth(method ="lm")+theme_bw()+xlab("Rimrock Low Pool (acre-feet)")+ylab("Indian Creek + SF Tieton Redds \n 2 year lag")
 
@@ -285,11 +339,30 @@ ggplot(redds_sf_i, aes(lag2_rim_af, redds_total))+geom_point()+geom_smooth(metho
 No relationship, let's look at the detrended data. 
 
 
+
 ```{r, message = FALSE, warning=FALSE}
 ggplot(redds_sf_i, aes(lag2_rim_af, resid))+geom_point()+geom_smooth(method ="lm")+theme_bw()+xlab("Rimrock Low Pool (acre-feet)")+ylab("Detrended Indian Creek + SF Tieton Redds \n 2 year lag")
+summary(lm(resid~lag2_rim_af, data = redds_sf_i))
+```
+
+No relationship.
+
+
+### Year 3 Lag
+Now let's look at the impact of drawdown 2 years after
+
+First we will use the raw data:
+```{r, message = FALSE, warning=FALSE}
+ggplot(redds_sf_i, aes(lag3_rim_af, redds_total))+geom_point()+geom_smooth(method ="lm")+theme_bw()+xlab("Rimrock Low Pool (acre-feet)")+ylab("Indian Creek + SF Tieton Redds \n 3 year lag")
 
 ```
-No relationship.
+No relationship, let's look at the detrended data. 
+
+
+```{r, message = FALSE, warning=FALSE}
+ggplot(redds_sf_i, aes(lag3_rim_af, resid))+geom_point()+geom_smooth(method ="lm")+theme_bw()+xlab("Rimrock Low Pool (acre-feet)")+ylab("Detrended Indian Creek + SF Tieton Redds \n 3 year lag")
+summary(lm(resid~lag3_rim_af, data = redds_sf_i))
+```
 
 # Compete against environmental variables
 
@@ -317,51 +390,64 @@ redds_sf_i %<>%
 
 ```
 
-```{r, message=FALSE, warning = FALSE, eval = FALSE}
+```{r, message=FALSE, warning = FALSE}
 #build model
-a <- glm(resid~ lag1_rim_af + SWE_Apr_lag1, data = redds_sf_i)
-b <- glm(resid~  SWE_Apr_lag1, data = redds_sf_i)
-c <- glm(resid~ lag1_rim_af, data = redds_sf_i)
-d <- glm(resid~ 1, data = redds_sf_i)
+a <- lm(resid~ lag1_rim_af + SWE_Apr_lag1, data = redds_sf_i)
+b <- lm(resid~  SWE_Apr_lag1, data = redds_sf_i)
+c <- lm(resid~ lag1_rim_af, data = redds_sf_i)
+d <- lm(resid~ 1, data = redds_sf_i)
 
-# backwards stepwise model selection
-drop1(a, test = "Chisq")
+```
 
-#lrt
-anova(a, test = "Chisq")
+Let's do some EDA. We will look at correlation among predictors and the extent of multicollinearity using the variance inflation factor. 
 
-#vif
-car::vif(a)
+
+```{r}
 
 #correlation
 cor(select(redds_sf_i, resid, lag1_rim_af, SWE_Apr_lag1))
 
+#vif
+car::vif(a)
+```
+Next is model validation. We will use the "plot" function to examine residuals and QQ plots, as well as the simulated resiudals approach in DHARMa.
+
+```{r}
 #model validation
 DHARMa::simulateResiduals(a, plot = TRUE)
 ```
+Great looking model! Residuals look normally distributed, no outliers with outsized influence (leverage), no dependence. DHARMa simulated residuals confirms.
 
- Minimum pool and SWE are strongly correlated (r = 0.48). However, when both are used in a gaussian glm to model detrended redd counts from 1994 - 2023, the VIF is surprisingly low at 1.31. Model validation looks good. Backward stepwise selection using likelihood ratio tests, and a cutoff of p = 0.05 suggests that pool elevation (p = 0.02296), and not snowpack (p = 0.531), is a good predictor of redds the following year.
+First let's conduct backwards stepwise model selection based on the likelihood ratio test and the AIC
+```{r}
+# backwards stepwise model selection
+drop1(a, test = "Chisq")
+drop1(c, test = "Chisq")
 
-To be conservative, let's leave SWE in the model, and then plot model predictions
+```
+This approach suggests SWE does not improve the fit to the data (LRT p -value = 0.5).
+
+## Summary
+
+Minimum pool and SWE are strongly correlated (r = 0.48). However, when both are used in a lm to model detrended redd counts from 1994 - 2023, the VIF is surprisingly low at 1.31. Model validation looks good. Backward stepwise selection using likelihood ratio tests, and a cutoff of p = 0.05 suggests that pool elevation (p = 0.02269), and not snowpack (p = 0.531), is a good predictor of redds the following year.
 
 
-```{r, eval = FALSE}
+```{r}
 #plot prediction from model
 require(effects)
-eff1 <- predictorEffect("lag1_rim_af", a)
+eff1 <- predictorEffect("lag1_rim_af", c)
 effdf <- as.data.frame(eff1)
 
-ggplot(data = effdf, aes(x = (lag1_rim_af), y = fit))+ 
-  geom_line()+
-  geom_smooth( aes(ymin = lower, ymax = upper), stat = "identity") +
-  theme_bw()+
-  xlab("Low Pool Previous Year")+ylab("Change in Redd Counts from Linear Trend") 
+#ggplot(data = effdf, aes(x = (lag1_rim_af), y = fit))+ 
+#  geom_line()+
+#  geom_smooth( aes(ymin = lower, ymax = upper), stat = "identity") +
+#  theme_bw()+
+#  xlab("Low Pool Previous Year")+ylab("Change in Redd Counts from Linear Trend") 
 ```
 
-Here's the model prediction, around 50 redds lost (in addition to the trend towards decline). The gray is 95% CI for predicted effect. Doesn't appraoch zero until the lowest pool observations.
 
 
-# Summary / Conclusions
+# Conclusions
 
 There is a relationship between the depth of drawdown and the number of bull trout redds in SF Tieton and Indian Creek the following year. This relationship is apparent from raw redd count data, but only become statistically significant (p = 0.03) when using the residuals from a linear model that accounts for the overall decline in redd counts over the period analyzed. This relationship is shown below.
 
@@ -369,58 +455,5 @@ There is a relationship between the depth of drawdown and the number of bull tro
 ggplot(redds_sf_i, aes(lag1_rim_af, resid))+geom_point()+geom_smooth(method ="lm")+theme_bw()+xlab("Rimrock Low Pool (acre-feet)")+ylab("Detrended Indian Creek + SF Tieton Redds \n 1 year lag") + annotate(geom= "text", x = 25000, y = 100, label = "p = 0.0299")
 ```
 
-If we use this trendline to make some generalizations, since 1994 drawdowns below the 2001 SOAC reccomendation to maintain Rimrock pool above 30k acre-feet are associated with a decline the following year of ~40 redds in SF Tieton and Indian Creek. This decline may be due to entrainment, impacts to prey base, changes in connectivity, or some combination of these factors. Alternatively this relationship may be driven by a correlation between environmental factors that reduce redd counts and the need for deeper drawdowns.
-
-# next steps
-
-- choose an environmental variable that captures
-  - PCA with snowpack on Apr 1, mean annual max temp, etc
-  - look into the literature for "best"
-- 
-```{r, eval = FALSE}
-sp <- read_csv("data/snowpack.csv")
-sp <- sp[-1,c(1, 13)]
-
-#note water year is designated as the calendar year that it ends, so the data for Apr corresponds to the calendar year
-
-sp %<>%
-  rename(SWE_Apr = "Apr...13", year = "Water Year") %>%
-  mutate(year_lag = year + 1)
-
-redds_sf_i %<>% 
-  left_join(select(sp, year_lag, SWE_Apr), by = c("year" = "year_lag"), keep = F)
-
-redds_sf_i %<>%
-  mutate(SWE_Apr = as.numeric(SWE_Apr))
-
-a <- glm(resid~ lag1_rim_af + SWE_Apr, data = redds_sf_i)
-b <- glm(resid~  SWE_Apr, data = redds_sf_i)
-c <- glm(resid~ lag1_rim_af, data = redds_sf_i)
-d <- glm(resid~ 1, data = redds_sf_i)
-
-drop1(a, test = "Chisq")
-
-anova(a, test = "Chisq")
-
-car::vif(a)
-
-cor(select(redds_sf_i, resid, lag1_rim_af, SWE_Apr))
-
-DHARMa::simulateResiduals(a, plot = TRUE)
-
-
-
-
-```
-```{r, eval = FALSE}
-require(effects)
-eff1 <- predictorEffect("lag1_rim_af", a)
-effdf <- as.data.frame(eff1)
-
-ggplot(data = effdf, aes(x = (lag1_rim_af), y = fit))+ 
-  geom_line()+
-  geom_smooth( aes(ymin = lower, ymax = upper), stat = "identity") +
-  theme_bw()+
-  xlab("Low Pool Previous Year")+ylab("Change in Redd Counts from Linear Trend") 
-```
+If we use this trendline to make some generalizations, since 1994 drawdowns below the 2001 SOAC reccomendation to maintain Rimrock pool above 30k acre-feet are associated with a decline the following year of ~53 redds in SF Tieton and Indian Creek. This decline may be due to entrainment, impacts to prey base, changes in connectivity, or some combination of these factors. 
 
