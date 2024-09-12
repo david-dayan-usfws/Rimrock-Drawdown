@@ -368,7 +368,7 @@ summary(lm(resid~lag3_rim_af, data = redds_sf_i))
 
 There should be strong correlation between environmental conditions and the need for deep drawdowns. Therefore, the relationship between drawdown depth and redd counts the following year could be mediated by a common factor, and not be causal. One way to evaluate this question would be to build a model that includes environmental variables as potential explanatory factors, then examine the degree the effects of these variables on redd counts can be parsed from those of drawdown depth using the variance inflation factor. 
 
-For now, let's use snowpack at a nearby SNOTEL site (White Pass) on Apr 1 of the year BEFORE redd counts. The rationale for using the lagged effect is that we are curious about other factors that might explain why lagged drawdown depth correlates with redd counts, and not that there is a correlation with water quantity available for instream flows in the year of the redd counts.
+For now, let's use snowpack at a nearby SNOTEL site (White Pass) on Apr 1 of the year BEFORE redd counts. The rationale for using the lagged effect is that we are curious about other factors that might explain why lagged drawdown depth correlates with redd counts, and not that there is a correlation with water quantity available for instream flows in the year of the redd counts. 
 
 
 ```{r, message = FALSE, warning = FALSE}
@@ -425,7 +425,39 @@ drop1(a, test = "Chisq")
 drop1(c, test = "Chisq")
 
 ```
-This approach suggests SWE does not improve the fit to the data (LRT p -value = 0.5).
+This approach suggests SWE the year before does not improve the fit to the data (LRT p -value = 0.5).
+
+__Same Year SWE__
+Others might question the choice to use lagged SWE. Let's also briefly look at SWE the same year. 
+
+```{r}
+
+redds_sf_i %<>% 
+  left_join(select(sp, year, SWE_Apr), by = c("year" = "year"), keep = F) %>% 
+  mutate(SWE_Apr = as.numeric(SWE_Apr))
+
+e <- lm(resid~ lag1_rim_af + SWE_Apr, data = redds_sf_i)
+drop1(e, test = "Chisq")
+```
+SWE in the same year only marginally improves the fit to the data (delta AIC = 1.4, lrt p-value = 0.063). We will not include it. However, Since this is a close case (delta AIC <2) we should at least explore to ensure it does not drastically change the interpretation of the results. Let's look at the predicted effect of minimum pool elevation across two models (residual_redds ~ lagged_rimrock_acre_feet, and residual_redds ~ lagged_rimrock_acre_feet + SWE)
+
+```{r}
+#plot prediction from model
+require(effects)
+eff1 <- predictorEffect("lag1_rim_af", c)
+effdf <- as.data.frame(eff1)
+
+eff2 <- predictorEffect("lag1_rim_af", e)
+effdf2 <- as.data.frame(eff2)
+
+#ggplot(data = effdf, aes(x = (lag1_rim_af), y = fit))+ 
+#  geom_line()+
+#  geom_smooth( aes(ymin = lower, ymax = upper), stat = "identity") +
+#  theme_bw()+
+#  xlab("Low Pool Previous Year")+ylab("Change in Redd Counts from Linear Trend") 
+```
+
+In the first model (no SWE), a drawdown to 30kaf is associated with a loss of 33.7 redds the following year. In the second model (includes SWE same year), a drawdown to 30kaf is associated with a loss of 34.3 redds the following year. I do not believe the change in the prediction is substantial enough to warrant the additional complexity needed to explain all of this in the whitepaper. Also, let's remember (a) delta AIC is less than 2 and lrt p value is > 0.05, and (b) we're more interested in the previous year. Let's exclude it.
 
 ## Summary
 

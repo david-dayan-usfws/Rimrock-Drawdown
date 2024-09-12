@@ -3404,8 +3404,49 @@ drop1(a, test = &quot;Chisq&quot;)</code></pre>
 {"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["Df"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["Sum of Sq"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["RSS"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["AIC"],"name":[4],"type":["dbl"],"align":["right"]},{"label":["Pr(>Chi)"],"name":[5],"type":["dbl"],"align":["right"]}],"data":[{"1":"NA","2":"NA","3":"111769.9","4":"228.8657","5":"NA","_rn_":"<none>"},{"1":"1","2":"23697.71","3":"135467.6","4":"232.0576","5":"0.02269323","_rn_":"lag1_rim_af"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
-<p>This approach suggests SWE does not improve the fit to the data (LRT
-p -value = 0.5).</p>
+<p>This approach suggests SWE the year before does not improve the fit
+to the data (LRT p -value = 0.5).</p>
+<p><strong>Same Year SWE</strong> Others might question the choice to
+use lagged SWE. Let’s also briefly look at SWE the same year.</p>
+<pre class="r"><code>redds_sf_i %&lt;&gt;% 
+  left_join(select(sp, year, SWE_Apr), by = c(&quot;year&quot; = &quot;year&quot;), keep = F) %&gt;% 
+  mutate(SWE_Apr = as.numeric(SWE_Apr))
+
+e &lt;- lm(resid~ lag1_rim_af + SWE_Apr, data = redds_sf_i)
+drop1(e, test = &quot;Chisq&quot;)</code></pre>
+<div data-pagedtable="false">
+<script data-pagedtable-source type="application/json">
+{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["Df"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["Sum of Sq"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["RSS"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["AIC"],"name":[4],"type":["dbl"],"align":["right"]},{"label":["Pr(>Chi)"],"name":[5],"type":["dbl"],"align":["right"]}],"data":[{"1":"NA","2":"NA","3":"98397.99","4":"227.4253","5":"NA","_rn_":"<none>"},{"1":"1","2":"24475.72","3":"122873.70","4":"231.4230","5":"0.01432462","_rn_":"lag1_rim_af"},{"1":"1","2":"13371.93","3":"111769.92","4":"228.8657","5":"0.06362043","_rn_":"SWE_Apr"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+  </script>
+</div>
+<p>SWE in the same year only marginally improves the fit to the data
+(delta AIC = 1.4, lrt p-value = 0.063). We will not include it. However,
+Since this is a close case (delta AIC &lt;2) we should at least explore
+to ensure it does not drastically change the interpretation of the
+results. Let’s look at the predicted effect of minimum pool elevation
+across two models (residual_redds ~ lagged_rimrock_acre_feet, and
+residual_redds ~ lagged_rimrock_acre_feet + SWE)</p>
+<pre class="r"><code>#plot prediction from model
+require(effects)
+eff1 &lt;- predictorEffect(&quot;lag1_rim_af&quot;, c)
+effdf &lt;- as.data.frame(eff1)
+
+eff2 &lt;- predictorEffect(&quot;lag1_rim_af&quot;, e)
+effdf2 &lt;- as.data.frame(eff2)
+
+#ggplot(data = effdf, aes(x = (lag1_rim_af), y = fit))+ 
+#  geom_line()+
+#  geom_smooth( aes(ymin = lower, ymax = upper), stat = &quot;identity&quot;) +
+#  theme_bw()+
+#  xlab(&quot;Low Pool Previous Year&quot;)+ylab(&quot;Change in Redd Counts from Linear Trend&quot;) </code></pre>
+<p>In the first model (no SWE), a drawdown to 30kaf is associated with a
+loss of 33.7 redds the following year. In the second model (includes SWE
+same year), a drawdown to 30kaf is associated with a loss of 34.3 redds
+the following year. I do not believe the change in the prediction is
+substantial enough to warrant the additional complexity needed to
+explain all of this in the whitepaper. Also, let’s remember (a) delta
+AIC is less than 2 and lrt p value is &gt; 0.05, and (b) we’re more
+interested in the previous year. Let’s exclude it.</p>
 <div id="summary" class="section level2">
 <h2>Summary</h2>
 <p>Minimum pool and SWE are strongly correlated (r = 0.48). However,
