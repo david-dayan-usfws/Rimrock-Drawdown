@@ -489,3 +489,53 @@ ggplot(redds_sf_i, aes(lag1_rim_af, resid))+geom_point()+geom_smooth(method ="lm
 
 If we use this trendline to make some generalizations, since 1994 drawdowns below the 2001 SOAC reccomendation to maintain Rimrock pool above 30k acre-feet are associated with a decline the following year of ~53 redds in SF Tieton and Indian Creek. This decline may be due to entrainment, impacts to prey base, changes in connectivity, or some combination of these factors. 
 
+# Miscellaneous
+
+This section collects additional analyses not included in the whitepaper for clarity.
+
+## GAM/ Non-Linear Relationship
+There's no strong reason to assume a linear relationship between entrainment and pool volume. We chose pool volume given the focus in previous studies and it's utility as an operation benchmark. Entrainment rate generally is a function of proximity to the inlet and inlet velocity. In Rimrock, bathymetry concentrates fish at the forebay non-linearly with reservoir elevation. 
+
+Mongillo and Falconer arrived at their 30kaf cutoff by conducting regressions on portions of the data subdivided into different bins of pool elevation, an idea similar to local regression/LOESS. Let's take a similar approach, but formal. WE will use general additive modeling with cubic regression spline and cross validation.
+
+```{r, eval = FALSE}
+require(mgcv)
+f <-  gam(resid~ s(lag1_rim_af, fx = FALSE, k=-1, bs = "cr"), data = redds_sf_i)
+plot(f, se = TRUE)
+f_pred <- predict(f, se = TRUE, type = "response")
+gam.check(f)
+```
+
+## Population Level Response
+
+We chose to focus on the sum of Indian and SFT redds to reduce the influence of population level stochasticity and increase power to focus identify shared Rimrock-wide impacts of Tieton Dam operations. However, there may be sufficient power to identify effects in each population, or we may find that one population is impacted more than the other. For example, genetic stock identification of bull trout in Tieton pool collected in 2003 found that 1.5 fold more Indian Creek fish than SF Tieton fish, despite the fact that the SF Tieton population was approximately 1.7 fold larger than Indian Creek at that time (using redd counts in index reaches).
+
+I predict that when analyzing each population separately, there will be limited power to identify a relationship, but the non-significant association will be much steeper in Indian than SF Tieton.
+
+```{r}
+# we can't just use the existing dataset because we cut it at 1994..
+min_pool_year %<>%
+  mutate(year1 = year + 1)
+ind <- redds_up %>%
+  filter(local_pop == "Indian") %>%
+  left_join(select(min_pool_year, year1, lag1_rim_af =rim_af), by = c("year" = "year1")) %>%
+  drop_na(redds_na) %>%
+  mutate(resid_redds = detrend(redds_na))
+
+ggplot(data = ind, aes(lag1_rim_af, resid_redds))+geom_point()+geom_smooth(method = "lm")
+summary(lm(resid_redds ~ lag1_rim_af, data = ind))
+
+
+sft <- redds_up %>%
+  filter(local_pop == "SF_Tieton") %>%
+  left_join(select(min_pool_year, year1, lag1_rim_af =rim_af), by = c("year" = "year1")) %>%
+  drop_na(redds_na) %>%
+  mutate(resid_redds = detrend(redds_na))
+
+ggplot(data = sft, aes(lag1_rim_af, resid_redds))+geom_point()+geom_smooth(method = "lm")
+summary(lm(resid_redds ~ lag1_rim_af, data = sft))
+
+```
+Wow, nailed it. not a significant relationship in either pop (although close in Indian), but the slope of the relationship is 2 fold greater in Indian than SF Tieton. 
+
+
